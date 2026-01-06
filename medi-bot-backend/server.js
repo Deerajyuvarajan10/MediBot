@@ -99,3 +99,60 @@ app.post("/clear-history", async (req, res) => {
 app.listen(process.env.PORT || 5000, () => {
   console.log("🚀 MediBot LLaMA + History Backend Running on Port", process.env.PORT);
 });
+
+
+import multer from "multer";
+import Tesseract from "tesseract.js";
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+// ⭐ OCR + AI Meaning Route
+app.post("/ocr", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.json({ text: "", answer: "No file received" });
+
+    console.log("🧾 Running OCR...");
+
+    const result = await Tesseract.recognize(req.file.buffer, "eng");
+
+    const extractedText = result.data.text;
+    console.log("OCR Result:", extractedText);
+
+    // Send to LLaMA
+    const payload = {
+      model: "llama3",
+      messages: [
+        {
+          role: "system",
+          content: `
+You are MediBot. Extract medicine names from text.
+For each medicine explain:
+• What it is used for
+• Simple meaning
+• Safety note
+Do NOT prescribe.`
+        },
+        {
+          role: "user",
+          content: extractedText
+        }
+      ],
+      stream: false
+    };
+
+    const response = await axios.post(OLLAMA_URL, payload, {
+      headers: { "Content-Type": "application/json" }
+    });
+
+    const answer = response.data?.message?.content || "No response";
+
+    res.json({
+      text: extractedText,
+      answer
+    });
+
+  } catch (err) {
+    console.log("OCR ERROR:", err);
+    res.json({ text: "", answer: "OCR Failed" });
+  }
+});
